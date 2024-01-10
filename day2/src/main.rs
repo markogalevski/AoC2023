@@ -49,6 +49,22 @@ impl Game {
     fn is_possible(&self) -> bool {
         !self.rounds.iter().any(|round| round.is_impossible())
     }
+
+    fn min_reds(&mut self) -> usize {
+        self.rounds
+            .sort_by(|a, b| b.reds.partial_cmp(&a.reds).unwrap());
+        self.rounds[0].reds
+    }
+    fn min_greens(&mut self) -> usize {
+        self.rounds
+            .sort_by(|a, b| b.greens.partial_cmp(&a.greens).unwrap());
+        self.rounds[0].greens
+    }
+    fn min_blues(&mut self) -> usize {
+        self.rounds
+            .sort_by(|a, b| b.blues.partial_cmp(&a.blues).unwrap());
+        self.rounds[0].blues
+    }
 }
 
 fn main() {
@@ -76,5 +92,10 @@ fn main() {
         .map(|g| if g.is_possible() { g.id } else { 0 })
         .sum();
 
-    println!("{sum}");
+    println!("Sum of possible game ids: {sum}");
+    let power: usize = games
+        .iter_mut()
+        .map(|g| g.min_reds() * g.min_greens() * g.min_blues())
+        .sum();
+    println!("power: {power}");
 }
