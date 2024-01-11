@@ -5,7 +5,7 @@ use std::fmt;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct Part {
     number: usize,
     dimensions: Dimensions,
@@ -21,7 +21,7 @@ impl fmt::Display for Part {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct Dimensions {
     row: usize,
     start: usize,
@@ -29,13 +29,13 @@ struct Dimensions {
 }
 
 #[derive(Debug)]
-struct SpecialSymbol {
-    symbol: String,
+struct Gear {
     row: usize,
     column: usize,
+    attached_parts: Vec<Part>,
 }
 
-impl SpecialSymbol {
+impl Gear {
     fn is_adjacent_to(&self, part: &Part) -> bool {
         (self.row as isize - part.dimensions.row as isize).abs() <= 1
             && isize::try_from(part.dimensions.start).unwrap() - 1 <= self.column as isize
@@ -48,47 +48,52 @@ fn main() {
     let file = File::open(args[1].clone()).unwrap();
     let file = BufReader::new(file);
 
-    let mut special_symbols: Vec<SpecialSymbol> = vec![];
+    let mut gears: Vec<Gear> = vec![];
     let mut parts: Vec<Part> = vec![];
     for (row, line) in file.lines().enumerate() {
         let input = line.unwrap();
-        special_symbols.extend(
+        gears.extend(
             input
                 .chars()
                 .enumerate()
-                .filter(|(_, c)| !c.is_numeric() && *c != '.')
-                .map(|(column, char)| SpecialSymbol {
-                    symbol: char.to_string(),
+                .filter(|(_, c)| *c == '*')
+                .map(|(column, _)| Gear {
                     row,
                     column,
+                    attached_parts: vec![],
                 })
-                .collect::<Vec<SpecialSymbol>>(),
+                .collect::<Vec<Gear>>(),
         );
 
         let re = Regex::new("[0-9]+").unwrap();
         let mut i = 0;
         loop {
             if let Some(found) = re.find_at(&input, i) {
-                let part = Part {
+                parts.push(Part {
                     number: found.as_str().parse().unwrap(),
                     dimensions: Dimensions {
                         row,
                         start: found.start(),
                         end: found.end(),
                     },
-                };
-                parts.push(part);
-                i = found.start() + found.len();
+                });
+                i = found.end();
             } else {
                 break;
             }
         }
     }
-
-    let parts: Vec<&Part> = parts
+    for part in parts.iter_mut() {
+        for gear in gears.iter_mut() {
+            if gear.is_adjacent_to(&part) {
+                gear.attached_parts.push(part.clone());
+            }
+        }
+    }
+    let sum: usize = gears
         .iter()
-        .filter(|p| special_symbols.iter().any(|s| s.is_adjacent_to(&p)))
-        .collect();
-    let sum: usize = parts.iter().map(|p| p.number).sum();
+        .filter(|g| g.attached_parts.len() > 1)
+        .map(|g| g.attached_parts.iter().map(|p| p.number).product::<usize>())
+        .sum();
     println!("{sum}");
 }
