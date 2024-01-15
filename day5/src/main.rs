@@ -1,45 +1,42 @@
-use std::{fs::File, io::BufRead, io::BufReader};
+use std::{cmp::Ordering, fs::File, io::BufRead, io::BufReader};
 
 fn main() {
     let result = run("input.txt");
     println!("result = {result}");
 }
 
+#[derive(Debug)]
 struct FarmingRange {
-    destination: usize,
     source: usize,
     length: usize,
+    conversion_offset: i64,
 }
 
 impl FarmingRange {
     fn new(str_description: String) -> Self {
         let split: Vec<&str> = str_description.split_whitespace().collect();
+        let destination: i64 = split[0]
+            .parse()
+            .expect(&format!("Unable to unwrap destination {}", split[0]));
+        let source = split[1]
+            .parse()
+            .expect(&format!("Unable to unwrap source {}", split[1]));
+        let length = split[2]
+            .parse()
+            .expect(&format!("Unable to unwrap length {}", split[2]));
         Self {
-            destination: split[0]
-                .parse()
-                .expect(&format!("Unable to unwrap destination {}", split[0])),
-            source: split[1]
-                .parse()
-                .expect(&format!("Unable to unwrap source {}", split[1])),
-            length: split[2]
-                .parse()
-                .expect(&format!("Unable to unwrap length {}", split[2])),
+            source,
+            length,
+            conversion_offset: (destination - source as i64),
         }
-    }
-
-    fn source_in_range(&self, value: usize) -> bool {
-        value >= self.source && value < self.source + self.length
     }
 
     fn process_source(&self, value: usize) -> usize {
-        if self.source_in_range(value) {
-            self.destination + (value - self.source)
-        } else {
-            value
-        }
+        (value as i64 + self.conversion_offset) as usize
     }
 }
 
+#[derive(Debug)]
 struct FarmingMap {
     ranges: Vec<FarmingRange>,
 }
@@ -50,6 +47,7 @@ impl FarmingMap {
     }
 }
 
+#[derive(Debug)]
 enum CollectingData {
     Seeds,
     SeedToSoil,
@@ -100,10 +98,15 @@ fn run(filename: &str) -> usize {
             CollectingData::Seeds => {
                 if line.contains("seeds: ") {
                     let seedlist = line.replace("seeds: ", " ");
-                    seed_vec = seedlist
+                    let pairs_list: Vec<usize> = seedlist
                         .split_whitespace()
                         .map(|s| s.parse().expect(&format!("Unable to unwrap {s}")))
                         .collect();
+                    for pair in pairs_list.chunks(2) {
+                        for num in 0..pair[1] {
+                            seed_vec.push(pair[0] + num);
+                        }
+                    }
                 }
             }
             CollectingData::SeedToSoil => seed_to_soil.ranges.push(FarmingRange::new(line)),
@@ -125,24 +128,33 @@ fn run(filename: &str) -> usize {
             }
         }
     }
-    let maps: [&FarmingMap; 7] = [
-        &seed_to_soil,
-        &soil_to_fertilizer,
-        &fertilizer_to_water,
-        &water_to_light,
-        &light_to_temp,
-        &temp_to_humidity,
-        &humidity_to_location,
+    let mut maps: [FarmingMap; 7] = [
+        seed_to_soil,
+        soil_to_fertilizer,
+        fertilizer_to_water,
+        water_to_light,
+        light_to_temp,
+        temp_to_humidity,
+        humidity_to_location,
     ];
+    for map in maps.iter_mut() {
+        map.ranges
+            .sort_by(|a, b| a.source.partial_cmp(&b.source).unwrap());
+    }
     let mut seed_values: Vec<usize> = vec![];
     for seed in seed_vec {
         let mut seed_value = seed;
-        for map in maps {
-            for range in &map.ranges {
-                if range.source_in_range(seed_value) {
-                    seed_value = range.process_source(seed_value);
-                    break;
+        for map in &maps {
+            if let Ok(idx) = map.ranges.binary_search_by(|range| {
+                if range.source > seed_value {
+                    Ordering::Greater
+                } else if (range.source + range.length) <= seed_value {
+                    Ordering::Less
+                } else {
+                    Ordering::Equal
                 }
+            }) {
+                seed_value = map.ranges[idx].process_source(seed_value);
             }
         }
         seed_values.push(seed_value);
@@ -153,5 +165,6 @@ fn run(filename: &str) -> usize {
 
 #[test]
 fn sample_test() {
-    assert_eq!(run("sample_input.txt"), 35);
+    // assert_eq!(run("sample_input.txt"), 35);
+    assert_eq!(run("sample_input.txt"), 46);
 }
