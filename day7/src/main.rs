@@ -10,7 +10,6 @@ enum Card {
     Ace,
     King,
     Queen,
-    Jack,
     Ten,
     Nine,
     Eight,
@@ -20,6 +19,7 @@ enum Card {
     Four,
     Three,
     Two,
+    Joker,
 }
 
 impl Card {
@@ -28,7 +28,6 @@ impl Card {
             'A' => Self::Ace,
             'K' => Self::King,
             'Q' => Self::Queen,
-            'J' => Self::Jack,
             'T' => Self::Ten,
             '9' => Self::Nine,
             '8' => Self::Eight,
@@ -38,6 +37,7 @@ impl Card {
             '4' => Self::Four,
             '3' => Self::Three,
             '2' => Self::Two,
+            'J' => Self::Joker,
             &_ => panic!("Not a valid card! {c}"),
         }
     }
@@ -52,7 +52,6 @@ enum Hand {
     TwoPair,
     OnePair,
     HighCard,
-    ShitHand,
 }
 
 impl Hand {
@@ -61,29 +60,39 @@ impl Hand {
         for card in cards {
             *card_map.entry(*card).or_insert(0) += 1;
         }
-        let drain_vec: Vec<(Card, usize)> = card_map.drain().collect();
-        let mut pair_filter = drain_vec.iter().filter(|(_k, v)| *v == 2);
-        if drain_vec.iter().find(|(_k, v)| *v == 5).is_some() {
+        let num_jokers = if let Some(entry) = card_map.remove_entry(&Card::Joker) {
+            entry.1
+        } else {
+            0
+        };
+        let mut values: Vec<usize> = card_map.into_values().collect();
+        values.sort();
+        let values: Vec<usize> = values.into_iter().rev().collect();
+        let max_occuring_card = *values.get(0).unwrap_or(&0);
+
+        if max_occuring_card + num_jokers >= 5 {
             Self::FiveOfAKind
-        } else if drain_vec.iter().find(|(_k, v)| *v == 4).is_some() {
+        } else if max_occuring_card + num_jokers >= 4 {
             Self::FourOfAKind
-        } else if drain_vec.iter().find(|(_k, v)| *v == 3).is_some() {
-            if drain_vec.iter().find(|(_k, v)| *v == 2).is_some() {
+        } else if max_occuring_card + num_jokers >= 3 {
+            if values[1..].iter().any(|count| *count >= 2) {
                 Self::FullHouse
             } else {
                 Self::ThreeOfAKind
             }
-        } else if drain_vec.iter().max_by_key(|(_k, v)| v.clone()).unwrap().1 == 1 {
-            Self::HighCard
+        } else if max_occuring_card + num_jokers >= 2 {
+            let num_jokers = if max_occuring_card == 1 {
+                num_jokers - 1
+            } else {
+                num_jokers
+            };
+            if values[1] + num_jokers == 2 {
+                Self::TwoPair
+            } else {
+                Self::OnePair
+            }
         } else {
-            if !pair_filter.next().is_some() {
-                return Self::ShitHand;
-            }
-            if !pair_filter.next().is_some() {
-                return Self::OnePair;
-            }
-
-            Self::TwoPair
+            Self::HighCard
         }
     }
 }
@@ -138,7 +147,7 @@ fn parse_players(reader: BufReader<File>) -> Vec<Player> {
 
 #[test]
 fn sample_test() {
-    assert_eq!(run("sample_input.txt"), 6440);
+    assert_eq!(run("sample_input.txt"), 5905);
 }
 
 #[test]
