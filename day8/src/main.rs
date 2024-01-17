@@ -3,6 +3,7 @@ use std::{
     collections::HashMap,
     fs::File,
     io::{BufRead, BufReader},
+    sync::Arc,
 };
 
 #[derive(Debug)]
@@ -29,8 +30,9 @@ fn run(filename: &str) -> i64 {
     let file = File::open(filename).unwrap();
     let reader = BufReader::new(file);
     let (directions, map) = parse_input(reader);
+    let map = Arc::new(map);
+    let directions = Arc::new(directions);
     let current_locations: Vec<String> = map.keys().cloned().filter(|k| k.ends_with("A")).collect();
-    let mut circular = directions.iter().cycle();
     /*
     A helpful comment on reddit mentioned LCMs, mainly because of the fact that
     1. 6 various start points will at (usually different times) end in Z, but since they're not going to be ZZZ, they can jump anywhere
@@ -38,20 +40,26 @@ fn run(filename: &str) -> i64 {
     3. So taking the LCM of the 6 start points will find the smallest number of cycles that will result in all the periods matching up
     */
     let periods: i64 = current_locations
-        .iter()
+        .into_iter()
         .map(|loc| {
-            let mut loop_loc = loc.to_owned();
-            let mut counter: i64 = 0;
-            while !loop_loc.ends_with("Z") {
-                let choices = map.get(&loop_loc).unwrap();
-                loop_loc = match circular.next().unwrap() {
-                    Direction::Right => choices.1.clone(),
-                    Direction::Left => choices.0.clone(),
-                };
-                counter += 1;
-            }
-            counter
+            let map = Arc::clone(&map);
+            let directions = Arc::clone(&directions);
+            std::thread::spawn(move || {
+                let mut circular = directions.iter().cycle();
+                let mut loop_loc = loc.to_owned();
+                let mut counter: i64 = 0;
+                while !loop_loc.ends_with("Z") {
+                    let choices = map.get(&loop_loc.to_string());
+                    loop_loc = match &circular.next().unwrap() {
+                        Direction::Right => choices.unwrap().1.clone(),
+                        Direction::Left => choices.unwrap().0.clone(),
+                    };
+                    counter += 1;
+                }
+                counter
+            })
         })
+        .map(|handle| handle.join().unwrap())
         .fold(1, |acc, x| lcm(acc, x));
     periods
 }
@@ -93,4 +101,9 @@ fn sample_two() {
 #[test]
 fn sample_three() {
     assert_eq!(run("sample_input3.txt"), 6);
+}
+
+#[test]
+fn test_input() {
+    assert_eq!(run("input.txt"), 14616363770447);
 }
