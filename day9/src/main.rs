@@ -23,15 +23,22 @@ fn run(filename: &str) -> i64 {
             history = history.clone().windows(2).map(|sl| sl[1] - sl[0]).collect();
             histories.push(history.clone());
         }
-        sums += histories
-            .iter()
-            .map(|history| history.iter().last().unwrap())
-            .sum::<i64>();
+
+        sums += histories[0][0]
+            - histories[1..]
+                .iter()
+                .enumerate()
+                .map(|(i, history)| {
+                    let val = history.iter().next().unwrap() * ((-1_i64).pow((i) as u32));
+                    val
+                })
+                .reduce(|acc, x| acc + x)
+                .unwrap();
     }
     sums
 }
 
 #[test]
 fn sample_test() {
-    assert_eq!(run("sample_input.txt"), 114);
+    assert_eq!(run("sample_input.txt"), 2);
 }
