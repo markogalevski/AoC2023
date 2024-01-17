@@ -1,3 +1,4 @@
+use num::integer::lcm;
 use std::{
     collections::HashMap,
     fs::File,
@@ -24,23 +25,35 @@ fn main() {
     println!("{}", run("input.txt"));
 }
 
-fn run(filename: &str) -> usize {
+fn run(filename: &str) -> i64 {
     let file = File::open(filename).unwrap();
     let reader = BufReader::new(file);
     let (directions, map) = parse_input(reader);
-    let mut current_location = "AAA".to_owned();
-    let destination = "ZZZ".to_owned();
+    let current_locations: Vec<String> = map.keys().cloned().filter(|k| k.ends_with("A")).collect();
     let mut circular = directions.iter().cycle();
-    let mut counter = 0;
-    while current_location != destination {
-        let choices = map.get(&current_location).unwrap();
-        current_location = match circular.next().unwrap() {
-            Direction::Right => choices.1.clone(),
-            Direction::Left => choices.0.clone(),
-        };
-        counter += 1;
-    }
-    counter
+    /*
+    A helpful comment on reddit mentioned LCMs, mainly because of the fact that
+    1. 6 various start points will at (usually different times) end in Z, but since they're not going to be ZZZ, they can jump anywhere
+    2. i.e. every start point has a period and will reach a thing ending in Z after a certain number of steps before looping.
+    3. So taking the LCM of the 6 start points will find the smallest number of cycles that will result in all the periods matching up
+    */
+    let periods: i64 = current_locations
+        .iter()
+        .map(|loc| {
+            let mut loop_loc = loc.to_owned();
+            let mut counter: i64 = 0;
+            while !loop_loc.ends_with("Z") {
+                let choices = map.get(&loop_loc).unwrap();
+                loop_loc = match circular.next().unwrap() {
+                    Direction::Right => choices.1.clone(),
+                    Direction::Left => choices.0.clone(),
+                };
+                counter += 1;
+            }
+            counter
+        })
+        .fold(1, |acc, x| lcm(acc, x));
+    periods
 }
 
 fn parse_input(reader: BufReader<File>) -> (Vec<Direction>, HashMap<String, (String, String)>) {
@@ -75,4 +88,9 @@ fn sample_one() {
 #[test]
 fn sample_two() {
     assert_eq!(run("sample_input2.txt"), 6);
+}
+
+#[test]
+fn sample_three() {
+    assert_eq!(run("sample_input3.txt"), 6);
 }
