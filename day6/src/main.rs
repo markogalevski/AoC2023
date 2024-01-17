@@ -19,7 +19,7 @@ impl Tag {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 struct Race {
     time: usize,
     distance: usize,
@@ -53,36 +53,24 @@ impl Race {
     }
 }
 
-fn parse_input(reader: BufReader<File>) -> Vec<Race> {
-    let mut races: Vec<Race> = vec![];
-    let mut times: Vec<usize> = vec![];
-    let mut distances: Vec<usize> = vec![];
+fn parse_input(reader: BufReader<File>) -> Race {
+    let mut race = Race::default();
     for line in reader.lines() {
         let line = line.unwrap();
         let split: Vec<&str> = line.split(':').collect();
         let tag = split[0];
         let parts = split[1];
-        let parts: Vec<&str> = parts.split_whitespace().collect();
+        let parts: String = parts.split_whitespace().collect::<Vec<&str>>().join("");
         match Tag::from_str(tag) {
             Tag::Time => {
-                for part in parts {
-                    times.push(part.parse().unwrap());
-                }
+                race.time = parts.parse().unwrap();
             }
             Tag::Distance => {
-                for part in parts {
-                    distances.push(part.parse().unwrap());
-                }
+                race.distance = parts.parse().unwrap();
             }
         }
-        for (time, distance) in times.iter().zip(distances.iter()) {
-            races.push(Race {
-                time: *time,
-                distance: *distance,
-            });
-        }
     }
-    races
+    race
 }
 
 fn main() {
@@ -93,14 +81,11 @@ fn main() {
 fn run(filename: &str) -> usize {
     let file = File::open(filename).unwrap();
     let file: BufReader<File> = BufReader::new(file);
-    let races = parse_input(file);
-    races
-        .iter()
-        .map(|race| race.calc_num_win_conditions())
-        .product()
+    let race = parse_input(file);
+    race.calc_num_win_conditions()
 }
 
 #[test]
 fn sample_test() {
-    assert_eq!(run("sample_input.txt"), 288);
+    assert_eq!(run("sample_input.txt"), 71503);
 }
