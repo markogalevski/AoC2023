@@ -111,8 +111,9 @@ fn parse_input(filename: &str) -> (Vec<Vec<PipeShape>>, Option<(usize, usize)>) 
     (pipe_matrix, start_idx)
 }
 
-fn run(filename: &str) -> usize {
+fn run(filename: &str) -> i64 {
     let (mut pipe_matrix, start_idx) = parse_input(filename);
+    let mut polygon: Vec<Coords> = vec![];
     for row in &pipe_matrix {
         for beep in row {
             print!("{beep}   ");
@@ -133,10 +134,12 @@ fn run(filename: &str) -> usize {
         let mut cursor = take_one_loop_step(start_cursor, &mut pipe_matrix);
         let mut counter = 1;
         while cursor.coords != start_coords {
+            polygon.push(cursor.coords);
             cursor = take_one_loop_step(cursor, &mut pipe_matrix);
             counter += 1;
         }
-        counter / 2
+        let area = shoestring(&mut polygon);
+        picks_theorem_num_internal_points(area, counter)
     } else {
         0
     }
@@ -225,13 +228,47 @@ fn take_one_loop_step(cursor: Cursor, pipe_matrix: &Vec<Vec<PipeShape>>) -> Curs
     }
 }
 
+fn shoestring(polygon: &Vec<Coords>) -> f64 {
+    let mut polygon_copy = polygon.clone();
+    let start_coords = polygon[0];
+    polygon_copy.push(start_coords);
+    (polygon_copy
+        .windows(2)
+        .map(|coords| {
+            (
+                coords[0].row as i64,
+                coords[0].col as i64,
+                coords[1].row as i64,
+                coords[1].col as i64,
+            )
+        })
+        .map(|(y1, x1, y2, x2)| x1 * y2 - y1 * x2)
+        .sum::<i64>() as f64
+        * 0.5)
+        .abs()
+        .ceil()
+}
+
+fn picks_theorem_num_internal_points(area: f64, num_boundary_points: i64) -> i64 {
+    println!("A = {area}, b = {num_boundary_points}");
+    (area + 1. - num_boundary_points as f64 * 0.5) as i64
+}
+
 #[test]
 fn test_sample1() {
-    assert_eq!(run("sample_input1.txt"), 4);
+    assert_eq!(run("part2_sample1.txt"), 4);
 }
 #[test]
 fn test_sample2() {
-    assert_eq!(run("sample_input2.txt"), 8);
+    assert_eq!(run("part2_sample2.txt"), 4);
+}
+#[test]
+fn test_sample3() {
+    assert_eq!(run("part2_sample3.txt"), 8);
+}
+#[test]
+fn test_sample4() {
+    assert_eq!(run("part2_sample4.txt"), 10);
 }
 
 #[test]
@@ -240,4 +277,21 @@ fn replace_s_works() {
     let start_idx = start_idx.unwrap();
     replace_s(&start_idx, &mut pipe_matrix);
     assert_eq!(pipe_matrix[start_idx.0][start_idx.1], PipeShape::SE);
+}
+
+#[test]
+fn test_shoestring() {
+    let polygon: Vec<Coords> = vec![
+        Coords { row: 1, col: 2 },
+        Coords { row: 3, col: 1 },
+        Coords { row: 2, col: 4 },
+        Coords { row: 4, col: 6 },
+        Coords { row: 0, col: 5 },
+    ];
+    assert_eq!(shoestring(&polygon), 8.);
+}
+
+#[test]
+fn test_picks() {
+    assert_eq!(picks_theorem_num_internal_points(10., 8), 7)
 }
