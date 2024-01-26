@@ -21,39 +21,61 @@ fn run(filename: &str) -> usize {
     for line in reader.lines() {
         let line = line.unwrap();
         let split: Vec<&str> = line.split_whitespace().collect();
-        let checks: Vec<usize> = split[1].split(',').map(|x| x.parse().unwrap()).collect();
-        let mut states: Vec<State> = vec![State {
-            dot: Some(0),
-            hash: Some(1),
-        }];
-        let states_size = checks.iter().sum::<usize>() + checks.len() + 1;
-        states.reserve(states_size);
-        for check in &checks {
-            for _ in 1..*check {
-                states.push(State {
-                    dot: None,
-                    hash: Some(states.len() + 1),
-                });
-            }
-            if states.len() + 1 < states_size {
-                states.push(State {
-                    dot: Some(states.len() + 1),
-                    hash: None,
-                });
-                states.push(State {
-                    dot: Some(states.len()),
-                    hash: Some(states.len() + 1),
-                });
-            }
-        }
-        states.remove(states_size - 1);
-        let new_len = states.len();
-        states[new_len - 1].hash = None;
-        states[new_len - 1].dot = Some(new_len - 1);
-        let configs = count(split[0].to_owned(), &states);
+        let checks: Vec<usize> = split[1]
+            .split(',')
+            .map(|x| x.parse().unwrap())
+            .collect::<Vec<usize>>()
+            .repeat(5);
+        let states = create_states(checks);
+        let mut input = split[0].to_owned();
+        input.push_str("?");
+        input = input.repeat(5);
+        let len = input.len();
+        input.remove(len - 1);
+
+        let configs = count(input, &states);
         acc += configs;
     }
     acc
+}
+
+/* DFA method obtained from this article:
+https://alexoxorn.github.io/posts/aoc-day12-regular_languages/
+What I learned using this method:
+    * All regex can be represented as a DFA
+    * It's easier and safer to work with Option'd indexes to a vector in Rust
+    * Sometimes you don't need to create 800 new types and enums to solve a simple problem
+*/
+fn create_states(checks: Vec<usize>) -> Vec<State> {
+    let mut states: Vec<State> = vec![State {
+        dot: Some(0),
+        hash: Some(1),
+    }];
+    let states_size = checks.iter().sum::<usize>() + checks.len() + 1;
+    states.reserve(states_size);
+    for check in &checks {
+        for _ in 1..*check {
+            states.push(State {
+                dot: None,
+                hash: Some(states.len() + 1),
+            });
+        }
+        if states.len() + 1 < states_size {
+            states.push(State {
+                dot: Some(states.len() + 1),
+                hash: None,
+            });
+            states.push(State {
+                dot: Some(states.len()),
+                hash: Some(states.len() + 1),
+            });
+        }
+    }
+    states.remove(states_size - 1);
+    let new_len = states.len();
+    states[new_len - 1].hash = None;
+    states[new_len - 1].dot = Some(new_len - 1);
+    states
 }
 
 fn count(input: String, states: &Vec<State>) -> usize {
@@ -80,5 +102,5 @@ fn count(input: String, states: &Vec<State>) -> usize {
 
 #[test]
 fn test_sample() {
-    assert_eq!(run("sample_input.txt"), 21);
+    assert_eq!(run("sample_input.txt"), 525152);
 }
