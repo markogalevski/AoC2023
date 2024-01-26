@@ -1,124 +1,84 @@
-use itertools::Itertools;
 use std::{
+    collections::HashMap,
     fs::File,
     io::{BufRead, BufReader},
 };
-use thiserror::Error;
 
-#[derive(Error, Debug)]
-enum SpringError {
-    #[error("Cannot check springs with unknown states!")]
-    UnknownState,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Copy)]
-enum Spring {
-    Okay,
-    Damaged,
-    Unknown,
-}
-
-impl Spring {
-    fn from_char(c: char) -> Self {
-        match c {
-            '.' => Self::Okay,
-            '#' => Self::Damaged,
-            '?' => Self::Unknown,
-            _ => panic!("Unrecognised spring state!!!"),
-        }
-    }
-
-    const VALUES: [Self; 2] = [Self::Okay, Self::Damaged];
+#[derive(PartialEq, Eq, Hash, Clone, Copy, Debug)]
+struct State {
+    dot: Option<usize>,
+    hash: Option<usize>,
 }
 
 fn main() {
-    println!("Hello, world!");
+    println!("{}", run("input.txt"));
 }
 
 fn run(filename: &str) -> usize {
     let file = File::open(filename).unwrap();
     let reader = BufReader::new(file);
-
+    let mut acc = 0;
     for line in reader.lines() {
         let line = line.unwrap();
         let split: Vec<&str> = line.split_whitespace().collect();
-        let springs = split[0];
-        let mut springs: Vec<Spring> = springs.chars().map(|c| Spring::from_char(c)).collect();
         let checks: Vec<usize> = split[1].split(',').map(|x| x.parse().unwrap()).collect();
-        let num_unknown = springs.iter().filter(|s| **s == Spring::Unknown).count();
-        println!("{num_unknown}");
-        replace_and_check(&mut springs, &checks);
-    }
-    0
-}
-
-fn replace_and_check(springs: &mut Vec<Spring>, checks: &Vec<usize>) -> bool {
-    // TODO: This is wrong and dumb. Permutations get deleted... Fix it!
-    // 1. Get indices of first unknown
-    if let Some(index) = springs.iter().position(|s| *s == Spring::Unknown) {
-        // 2. Call loop for value in Spring::VALUES.iter() {}
-        for value in Spring::VALUES.iter() {
-            // 3. replace springs[index] = value
-            springs[index] = *value;
-            if let Err(_) = check_springs(&springs, checks) {
-                replace_and_check(springs, checks);
+        let mut states: Vec<State> = vec![State {
+            dot: Some(0),
+            hash: Some(1),
+        }];
+        let states_size = checks.iter().sum::<usize>() + checks.len() + 1;
+        states.reserve(states_size);
+        for check in &checks {
+            for _ in 1..*check {
+                states.push(State {
+                    dot: None,
+                    hash: Some(states.len() + 1),
+                });
+            }
+            if states.len() + 1 < states_size {
+                states.push(State {
+                    dot: Some(states.len() + 1),
+                    hash: None,
+                });
+                states.push(State {
+                    dot: Some(states.len()),
+                    hash: Some(states.len() + 1),
+                });
             }
         }
+        states.remove(states_size - 1);
+        let new_len = states.len();
+        states[new_len - 1].hash = None;
+        states[new_len - 1].dot = Some(new_len - 1);
+        let configs = count(split[0].to_owned(), &states);
+        acc += configs;
     }
-    if let Ok(is_good) = check_springs(&springs, checks) {
-        is_good
-    } else {
-        panic!("SHOULDN'T HAPPEN");
-    }
-
-    // 4. check_springs(). If error, recurse again, feeding in the mutable spring reference
+    acc
 }
 
-fn check_springs(springs: &Vec<Spring>, checks: &Vec<usize>) -> Result<bool, SpringError> {
-    if springs.iter().any(|s| *s == Spring::Unknown) {
-        return Err(SpringError::UnknownState);
-    }
-    let mut remover = false;
-    let springs: Vec<Spring> = springs
-        .iter()
-        .map(|spring| {
-            if *spring == Spring::Okay {
-                if remover == false {
-                    remover = true;
-                    Some(spring)
-                } else {
-                    None
+fn count(input: String, states: &Vec<State>) -> usize {
+    let mut curr_map: HashMap<State, usize> = HashMap::from([(states[0], 1)]);
+    for c in input.chars() {
+        let mut next_map: HashMap<State, usize> = HashMap::new();
+        curr_map.iter().for_each(|(key, value)| {
+            if let Some(dot) = key.dot {
+                if c == '.' || c == '?' {
+                    *next_map.entry(states[dot]).or_insert(0) += value;
                 }
-            } else {
-                remover = false;
-                Some(spring)
             }
-        })
-        .filter_map(|s| s)
-        .map(|s| *s)
-        .collect();
-    Ok(springs
-        .split(|s| *s == Spring::Okay)
-        .zip(checks)
-        .all(|(s, c)| s.len() == *c))
+            if let Some(hash) = key.hash {
+                if c == '#' || c == '?' {
+                    *next_map.entry(states[hash]).or_insert(0) += value;
+                }
+            }
+        });
+        curr_map = next_map;
+    }
+    let last_state = states[states.len() - 1];
+    *curr_map.get(&last_state).unwrap_or(&0)
 }
 
 #[test]
 fn test_sample() {
     assert_eq!(run("sample_input.txt"), 21);
-}
-
-#[test]
-fn test_spring_condition() {
-    let springs: Vec<Spring> = vec![
-        Spring::Damaged,
-        Spring::Okay,
-        Spring::Damaged,
-        Spring::Okay,
-        Spring::Damaged,
-        Spring::Damaged,
-        Spring::Damaged,
-    ];
-    let checks: Vec<usize> = vec![1, 1, 3];
-    assert!(check_springs(&springs, &checks).unwrap())
 }
