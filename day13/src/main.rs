@@ -39,15 +39,11 @@ fn run(filename: &str) -> usize {
 }
 
 fn calculate_matrix(matrix: &Vec<Vec<char>>) -> usize {
-    // for row in matrix.iter() {
-    //     println!("{row:?}");
-    // }
-    // println!("");
     if let Some(symmetry_line) = find_symmetry_line(matrix) {
-        return 100 * symmetry_line;
+        100 * symmetry_line
     } else {
         let matrix = matrix_transpose(matrix.clone());
-        return find_symmetry_line(&matrix).expect("really expect symmetry at this point");
+        find_symmetry_line(&matrix).expect("really expect symmetry at this point")
     }
 }
 
@@ -55,7 +51,7 @@ fn find_symmetry_line(matrix: &Vec<Vec<char>>) -> Option<usize> {
     let mut prev: Vec<char> = Vec::new();
     let mut symmetry_line = None;
     for (i, row) in matrix.iter().enumerate() {
-        if *row == prev {
+        if smudged_equality(row, &prev).is_some() {
             symmetry_line = check_symmetry(matrix, i);
         }
         if symmetry_line.is_some() {
@@ -64,6 +60,11 @@ fn find_symmetry_line(matrix: &Vec<Vec<char>>) -> Option<usize> {
         prev = row.clone();
     }
     symmetry_line
+}
+
+fn smudged_equality(row1: &[char], row2: &[char]) -> Option<usize> {
+    let num_mismatched = row1.len() - row1.iter().zip(row2.iter()).filter(|(a, b)| a == b).count();
+    (num_mismatched <= 1).then_some(num_mismatched)
 }
 
 #[derive(Debug)]
@@ -92,12 +93,27 @@ fn check_symmetry(matrix: &MirrorMatrix, symmetry_line: usize) -> Option<usize> 
             opposite_slice = matrix[symmetry_line - symmetry_slice.len()..symmetry_line].to_vec();
         }
     }
-    (symmetry_slice == opposite_slice).then_some(symmetry_line)
+
+    let mut equality_map = symmetry_slice
+        .iter()
+        .zip(opposite_slice.iter())
+        .map(|(row1, row2)| smudged_equality(row1, row2));
+    let smudge_sum: usize = equality_map.clone().flatten().sum();
+
+    if equality_map.any(|x| x.is_none()) {
+        return None;
+    }
+    (smudge_sum == 1).then_some(symmetry_line)
 }
 
 #[test]
 fn test_sample() {
-    assert_eq!(run("sample_input.txt"), 405);
+    assert_eq!(run("sample_input.txt"), 400);
+}
+
+#[test]
+fn test_input() {
+    assert_eq!(run("input.txt"), 35554);
 }
 
 #[test]
