@@ -1,20 +1,8 @@
+use aoc_utils::{matrix_transpose, Matrix};
 use std::{
     fs::File,
     io::{BufRead, BufReader},
 };
-
-type MirrorMatrix = Vec<Vec<char>>;
-
-fn matrix_transpose(matrix: MirrorMatrix) -> MirrorMatrix {
-    let new_row: Vec<char> = vec!['x'; matrix.len()];
-    let mut new_matrix: MirrorMatrix = vec![new_row; matrix[0].len()];
-    matrix.iter().enumerate().for_each(|(i, row)| {
-        row.iter().enumerate().for_each(|(j, element)| {
-            new_matrix[j][i] = *element;
-        })
-    });
-    new_matrix
-}
 
 fn main() {
     println!("{}", run("input.txt"));
@@ -24,7 +12,7 @@ fn run(filename: &str) -> usize {
     let file = File::open(filename).unwrap();
     let reader = BufReader::new(file);
     let mut acc = 0;
-    let mut matrix: MirrorMatrix = Vec::new();
+    let mut matrix: Matrix = Vec::new();
     for line in reader.lines() {
         let line: String = line.unwrap();
         if line.is_empty() {
@@ -73,7 +61,7 @@ enum MeasurementFrame {
     PostLine,
 }
 
-fn check_symmetry(matrix: &MirrorMatrix, symmetry_line: usize) -> Option<usize> {
+fn check_symmetry(matrix: &Matrix, symmetry_line: usize) -> Option<usize> {
     let pre_post_line = if symmetry_line <= matrix.len() / 2 {
         MeasurementFrame::PreLine
     } else {
@@ -114,20 +102,4 @@ fn test_sample() {
 #[test]
 fn test_input() {
     assert_eq!(run("input.txt"), 35554);
-}
-
-#[test]
-fn test_matrix_transpose() {
-    let a = vec!['a', 'b', 'c', 'd'];
-    let b = vec!['e', 'f', 'g', 'h'];
-    let matrix: MirrorMatrix = vec![a, b];
-    let matrix_t = matrix_transpose(matrix);
-    let reference: MirrorMatrix = vec![
-        vec!['a', 'e'],
-        vec!['b', 'f'],
-        vec!['c', 'g'],
-        vec!['d', 'h'],
-    ];
-
-    assert_eq!(matrix_t, reference);
 }
