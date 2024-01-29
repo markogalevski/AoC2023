@@ -1,47 +1,110 @@
-use aoc_utils::{matrix_transpose, Matrix};
+use aoc_utils::{matrix_rotate_ccw, matrix_rotate_cw, Matrix};
+
+use std::collections::HashMap;
 use std::{
     fs::File,
     io::{BufRead, BufReader},
 };
 
 fn main() {
-    println!("{}", run("input.txt"));
+    println!("{}", run("input.txt", 1000000000));
 }
 
-fn run(filename: &str) -> i64 {
-    let matrix = read_matrix(filename);
+fn run(filename: &str, spin_for: usize) -> i64 {
+    let input_matrix = read_matrix(filename);
+    let mut matrix = input_matrix.clone();
+    let mut hashed_states: HashMap<Matrix, usize> = HashMap::new();
+    let mut cycle_and_recycle = None;
+    for i in 1..=spin_for {
+        matrix = spin_matrix(matrix, 1);
+        if let Some(previous_add) = hashed_states.insert(matrix.clone(), i) {
+            println!("Cyclic nature found at spin {i}, originally added at {previous_add}");
+            cycle_and_recycle = Some((previous_add, i));
+            break;
+        }
+    }
+    let matrix = if let Some((cycle_start, recycle_at)) = cycle_and_recycle {
+        let offset_spins = cycle_start;
+        let new_spins = (spin_for - cycle_start) % (recycle_at - cycle_start);
+        println!("About to spin for {offset_spins} + {new_spins} (original - offset % cycle length) cycles instead");
+        spin_matrix(input_matrix, offset_spins + new_spins)
+    } else {
+        matrix
+    };
+    let matrix = matrix_rotate_cw(matrix);
+    let rowlen = matrix.len();
+    matrix
+        .iter()
+        .enumerate()
+        .map(|(i, row)| row.iter().filter(|c| **c == 'O').count() * (rowlen - i))
+        .sum::<usize>() as i64
+}
+
+fn tilt_matrix(matrix: Matrix) -> Matrix {
     matrix
         .iter()
         .map(|row| {
-            let row_length = row.len();
-            let mut start_point: i64 = row_length.try_into().unwrap();
-            row.split(|c| *c == '#')
+            let new_segments: Matrix = row
+                .split(|c| *c == '#')
                 .map(|segment| {
-                    let end_point =
-                        start_point - segment.iter().filter(|c| **c == 'O').count() as i64;
-                    let segment_sum = ((end_point + 1)..=start_point).sum::<i64>();
-                    start_point -= i64::try_from(segment.len()).unwrap() + 1;
-                    segment_sum
+                    let mut new_segment: Vec<char> = segment
+                        .iter()
+                        .filter(|c| **c == 'O')
+                        .to_owned()
+                        .copied()
+                        .collect();
+                    new_segment.resize(segment.len(), '.');
+                    new_segment
                 })
-                .sum::<i64>()
+                .collect();
+            new_segments.join(&'#')
         })
-        .sum()
+        .collect()
 }
 
 fn read_matrix(filename: &str) -> Matrix {
-    let file = File::open(filename).expect(&format!("File {filename} not found!"));
+    let file = File::open(filename).unwrap_or_else(|_| panic!("File {filename} not found!"));
     let reader = BufReader::new(file);
 
     let mut grid: Matrix = vec![];
     for (i, line) in reader.lines().enumerate() {
-        let line = line.expect(&format!("Unable to read line number {i}"));
+        let line = line.unwrap_or_else(|_| panic!("Unable to read line number {i}"));
         grid.push(line.chars().collect());
     }
-    /* working with rows is easier than dealing with columns */
-    matrix_transpose(grid)
+    matrix_rotate_ccw(grid)
 }
 
 #[test]
 fn test_sample() {
-    assert_eq!(run("sample_input.txt"), 136)
+    assert_eq!(run("sample_input.txt", 1000000000), 64)
+}
+
+#[test]
+fn test_tilt_cycles() {
+    let input_matrix = read_matrix("sample_input.txt");
+    let one_cycle = spin_matrix(input_matrix, 1);
+
+    let reference = read_matrix("sample_one_cycle.txt");
+    println!("referecne");
+    for row in reference.iter() {
+        println!("{row:?}");
+    }
+    println!("");
+    assert_eq!(one_cycle, reference);
+}
+
+fn spin_matrix(input_matrix: Matrix, num_spins: usize) -> Matrix {
+    let mut one_cycle = input_matrix;
+    for _ in 0..(4 * num_spins) {
+        one_cycle = matrix_rotate_cw(tilt_matrix(one_cycle));
+    }
+    one_cycle
+}
+
+#[test]
+fn spin_cycle_test() {
+    let matrix = read_matrix("sample_input.txt");
+    let three_spins = spin_matrix(matrix.clone(), 3);
+    let ten_spins = spin_matrix(matrix, 17);
+    assert_eq!(three_spins, ten_spins);
 }
