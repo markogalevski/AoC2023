@@ -7,18 +7,55 @@ fn main() {
     println!("{}", run("input.txt"));
 }
 
+#[derive(Clone, Default, Debug)]
+struct Lens {
+    label: String,
+    focal_length: usize,
+}
+
 fn run(filename: &str) -> usize {
+    let mut boxes: Vec<Vec<Lens>> = Vec::with_capacity(256);
+    boxes.resize(256, vec![]);
     let file = File::open(filename).unwrap_or_else(|_| panic!("Unable to find file {filename}"));
     let reader = BufReader::new(file);
-    let mut acc: usize = 0;
     for line in reader.lines() {
         let line = line.unwrap_or_else(|_| panic!("Unable to read line"));
-        acc += line
-            .split(',')
-            .map(|part| hash_algorithm(part))
-            .sum::<usize>();
+        line.split(',').for_each(|part| {
+            if part.contains('=') {
+                let part_split: Vec<&str> = part.split('=').collect();
+                let lens = Lens {
+                    label: part_split[0].to_owned(),
+                    focal_length: part_split[1].parse().unwrap(),
+                };
+                let index = hash_algorithm(&lens.label);
+                let lens_index = boxes[index].iter().position(|p| p.label == lens.label);
+                if let Some(lens_index) = lens_index {
+                    boxes[index][lens_index].focal_length = lens.focal_length;
+                } else {
+                    boxes[index].push(lens);
+                }
+            }
+            if part.contains('-') {
+                let part = part.replace('-', "");
+                let index = hash_algorithm(&part);
+                let found_at = boxes[index].iter().position(|p| p.label == part);
+                if let Some(found_at) = found_at {
+                    boxes[index].remove(found_at);
+                }
+            }
+        });
     }
-    acc
+    boxes
+        .iter()
+        .enumerate()
+        .map(|(i, lensbox)| {
+            lensbox
+                .iter()
+                .enumerate()
+                .map(|(j, lens)| (i + 1) * (j + 1) * lens.focal_length)
+                .sum::<usize>()
+        })
+        .sum()
 }
 
 fn hash_algorithm(input: &str) -> usize {
@@ -43,5 +80,5 @@ fn test_hash() {
 
 #[test]
 fn test_sample_input() {
-    assert_eq!(run("sample_input.txt"), 1320);
+    assert_eq!(run("sample_input.txt"), 145);
 }
