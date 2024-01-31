@@ -13,9 +13,22 @@ trait Energize {
     fn energize_south(&mut self, start_point: Point);
     fn energize_east(&mut self, start_point: Point);
     fn energize_west(&mut self, start_point: Point);
+    fn clear_energy(&mut self);
+    fn count_energy(&self) -> usize;
 }
 
 impl Energize for MirrorMatrix {
+    fn count_energy(&self) -> usize {
+        self.iter()
+            .map(|row| row.iter().filter(|tile| tile.energised).count())
+            .sum()
+    }
+
+    fn clear_energy(&mut self) {
+        self.iter_mut()
+            .for_each(|row| row.iter_mut().for_each(|cell| cell.energised = false));
+    }
+
     fn energize(&mut self, heading: Heading, start_point: Point) {
         let Point {
             row: start_row,
@@ -260,6 +273,50 @@ fn main() {
 fn run(filename: &str) -> usize {
     let file = File::open(filename).unwrap();
     let reader = BufReader::new(file);
+    let mut mirrors = create_mirror_matrix(reader);
+    let mut maximums: Vec<usize> = vec![];
+    for c in 0..mirrors[0].len() {
+        let a = {
+            mirrors.clear_energy();
+            mirrors.energize(Heading::South, Point { row: 0, col: c });
+            mirrors.count_energy()
+        };
+        let b = {
+            mirrors.clear_energy();
+            mirrors.energize(
+                Heading::North,
+                Point {
+                    row: mirrors.len() - 1,
+                    col: c,
+                },
+            );
+            mirrors.count_energy()
+        };
+        maximums.push(std::cmp::max(a, b));
+    }
+    for r in 0..mirrors.len() {
+        let a = {
+            mirrors.clear_energy();
+            mirrors.energize(Heading::East, Point { row: r, col: 0 });
+            mirrors.count_energy()
+        };
+        let b = {
+            mirrors.clear_energy();
+            mirrors.energize(
+                Heading::West,
+                Point {
+                    row: r,
+                    col: mirrors[0].len() - 1,
+                },
+            );
+            mirrors.count_energy()
+        };
+        maximums.push(std::cmp::max(a, b));
+    }
+    *maximums.iter().max().unwrap()
+}
+
+fn create_mirror_matrix(reader: BufReader<File>) -> Vec<Vec<Tile>> {
     let mut mirrors: MirrorMatrix = vec![];
     for line in reader.lines() {
         let line = line.unwrap();
@@ -281,14 +338,10 @@ fn run(filename: &str) -> usize {
                 .collect(),
         );
     }
-    mirrors.energize(Heading::East, Point { row: 0, col: 0 });
     mirrors
-        .iter()
-        .map(|row| row.iter().filter(|tile| tile.energised).count())
-        .sum()
 }
 
 #[test]
 fn test_sample() {
-    assert_eq!(46, run("sample_input.txt"));
+    assert_eq!(51, run("sample_input.txt"));
 }
