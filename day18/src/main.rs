@@ -7,6 +7,7 @@ use aoc_utils::polygon::{
     circumference, picks_theorem_num_internal_points, shoelace, Point, Polygon,
 };
 
+#[derive(Debug)]
 enum Direction {
     Up,
     Right,
@@ -26,6 +27,18 @@ impl std::convert::From<&str> for Direction {
     }
 }
 
+impl std::convert::From<i64> for Direction {
+    fn from(i: i64) -> Self {
+        match i {
+            0 => Self::Right,
+            1 => Self::Down,
+            2 => Self::Left,
+            3 => Self::Up,
+            _ => panic!("unexpected direction!"),
+        }
+    }
+}
+
 fn main() {
     println!("{}", run("input.txt"));
 }
@@ -38,8 +51,10 @@ fn run(filename: &str) -> i64 {
     for line in reader.lines() {
         let line = line.unwrap();
         let line: Vec<&str> = line.split_whitespace().collect();
-        let direction = Direction::from(line[0]);
-        let steps: i64 = line[1].parse().unwrap();
+        let code: String = line[2].chars().filter(|c| c.is_alphanumeric()).collect();
+        let code: i64 = i64::from_str_radix(&code, 16).unwrap();
+        let direction = Direction::from(code & 0xF);
+        let steps = code >> 4;
         let latest_point = polygon.iter().last().unwrap();
         let offset = compute_offset(direction, steps);
         polygon.push(latest_point.add(&offset));
@@ -63,5 +78,5 @@ fn compute_offset(dir: Direction, steps: i64) -> Point {
 
 #[test]
 fn test_sample() {
-    assert_eq!(run("sample_input.txt"), 62);
+    assert_eq!(run("sample_input.txt"), 952408144115);
 }
