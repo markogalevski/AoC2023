@@ -16,14 +16,45 @@ fn main() -> Result<()> {
 
 fn run(filename: &str) -> Result<usize> {
     let (graph, mut lookup) = build_graph_and_lookup(filename)?;
+    /*
+        Find object feeding rx.
+        Find its inputs.
+        press the button until all of the inputs have received high at least once.
+        registetr  that button press at that time.
+    */
+    let rx_feeder = lookup.get("rs").unwrap();
+    let rx_feeder = &rx_feeder.borrow().clone();
+    let mut feeder_sources: HashMap<String, bool> = if let Node::Conjunct(c) = rx_feeder {
+        c.froms.iter().map(|f| (f.clone(), false)).collect()
+    } else {
+        panic!("WHAT");
+    };
+
     let mut high_signals: usize = 0;
     let mut low_signals: usize = 0;
-
-    for _ in 1..=1000 {
-        press_button(&mut lookup, &graph, &mut high_signals, &mut low_signals);
+    let mut rx_product: usize = 1;
+    for i in 1..=10000 {
+        press_button(
+            &mut lookup,
+            &graph,
+            &mut high_signals,
+            &mut low_signals,
+            &mut feeder_sources,
+        );
+        let mut key_to_remove: Option<String> = None;
+        for (k, v) in feeder_sources.iter() {
+            if *v {
+                rx_product *= i;
+                key_to_remove = Some(k.clone());
+            }
+        }
+        if let Some(key) = key_to_remove {
+            feeder_sources.remove(&key);
+        };
     }
     println!("High: {high_signals}");
     println!("Low: {low_signals}");
+    println!("rx_product: {rx_product}");
     Ok(high_signals * low_signals)
 }
 
@@ -32,6 +63,7 @@ fn press_button(
     graph: &Graph,
     high_signals: &mut usize,
     low_signals: &mut usize,
+    feeder_sources: &mut HashMap<String, bool>,
 ) {
     let mut signal_queue: VecDeque<Signal> = VecDeque::from([Signal {
         level: State::Low,
@@ -40,6 +72,7 @@ fn press_button(
     }]);
 
     *low_signals += 1;
+    let feeder_keys: Vec<String> = feeder_sources.clone().into_keys().collect();
     while let Some(signal) = signal_queue.pop_front() {
         if signal.to == "rx" || signal.to == "output" {
             continue;
@@ -54,6 +87,9 @@ fn press_button(
             let from = signal.to.clone();
             if let Some(new_level) = recipient.borrow_mut().generate_output_state(&signal) {
                 for adj in adj_list {
+                    if feeder_keys.contains(&from) && new_level == State::High {
+                        feeder_sources.insert(from.clone(), true);
+                    }
                     if new_level == State::High {
                         *high_signals += 1;
                     } else {
