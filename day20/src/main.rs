@@ -1,3 +1,4 @@
+use std::collections::VecDeque;
 use std::rc::Rc;
 use std::{
     cell::RefCell,
@@ -14,18 +15,16 @@ fn main() -> Result<()> {
 }
 
 fn run(filename: &str) -> Result<usize> {
-    let (graph, mut lookup) = build_graph_and_lookup(filename)?;
+    let (mut graph, mut lookup) = build_graph_and_lookup(filename)?;
     let mut high_signals: usize = 0;
     let mut low_signals: usize = 0;
 
+    graph
+        .nodes
+        .iter_mut()
+        .for_each(|node| node.borrow_mut().reset_levels());
     for _ in 1..=1000 {
-        let high_at_start = high_signals;
-        let low_at_start = low_signals;
         press_button(&mut lookup, &graph, &mut high_signals, &mut low_signals);
-
-        println!("generated highs: {}", high_signals - high_at_start);
-        println!("generated lows: {}", low_signals - low_at_start);
-        println!("-------");
     }
     println!("High: {high_signals}");
     println!("Low: {low_signals}");
@@ -39,19 +38,18 @@ fn press_button(
     high_signals: &mut usize,
     low_signals: &mut usize,
 ) {
-    let mut signal_queue = vec![Signal {
+    let mut signal_queue: VecDeque<Signal> = VecDeque::from([Signal {
         level: State::Low,
         to: "broadcaster".to_owned(),
         from: "button".to_owned(),
-    }];
+    }]);
+
     *low_signals += 1;
-    while let Some(signal) = signal_queue.pop() {
-        let Some(recipient) = lookup
-            .get(&signal.to) else {
-            println!("just tried to send a signal to {}, adding to lookup" , signal.to);
-            lookup.insert(signal.to.clone(), Rc::new(RefCell::new(Node::Sink(Sink {key: signal.to.clone()}))));
+    while let Some(signal) = signal_queue.pop_front() {
+        if signal.to == "rx" || signal.to == "output" {
             continue;
-        };
+        }
+        let recipient = lookup.get(&signal.to).unwrap();
         if let Some(idx) = graph
             .nodes
             .iter()
@@ -59,20 +57,21 @@ fn press_button(
         {
             let adj_list = &graph.adj_lists[idx];
             let from = signal.to.clone();
-            if let Some(new_signal_level) = recipient.borrow_mut().generate_output_state(signal) {
+            if let Some(new_level) = recipient.borrow_mut().generate_output_state(&signal) {
                 for adj in adj_list {
-                    if new_signal_level == State::High {
+                    if new_level == State::High {
                         *high_signals += 1;
                     } else {
                         *low_signals += 1;
                     }
+
                     let new_signal = Signal {
                         from: from.clone(),
-                        level: new_signal_level,
+                        level: new_level,
                         to: adj.clone(),
                     };
-                    println!("pushing {new_signal:?} to the queue");
-                    signal_queue.push(new_signal);
+
+                    signal_queue.push_back(new_signal);
                 }
             }
         }
@@ -98,14 +97,21 @@ fn build_graph_and_lookup(
             .adj_lists
             .push(split[1].split(',').map(|s| s.trim().to_owned()).collect());
     }
-    // println!("printing graph...");
-    // for (node, adj) in graph.nodes.iter().zip(graph.adj_lists.iter()) {
-    //     println!("{node:?}: {adj:?}");
-    // }
-    // println!("printing lookup...");
-    // for (key, value) in node_lookup.iter() {
-    //     println!("{key}: {value:?}");
-    // }
+    for (adj_list, source_node) in graph.adj_lists.iter().zip(graph.nodes.iter()) {
+        for adj in adj_list.iter() {
+            if let Some(target_node) = node_lookup.get_mut(adj) {
+                let target_node = &mut *target_node.borrow_mut();
+                match target_node {
+                    &mut Node::Conjunct(ref mut c) => {
+                        let source_name = &*source_node.borrow().get_name();
+                        c.froms.push(source_name.to_owned());
+                        c.inputs.push(State::Low);
+                    }
+                    _ => (),
+                };
+            }
+        }
+    }
     Ok((graph, node_lookup))
 }
 
@@ -147,7 +153,6 @@ enum Node {
     Broadcaster,
     FlipFlop(FlipFlop),
     Conjunct(Conjunct),
-    Sink(Sink),
 }
 
 impl Node {
@@ -158,16 +163,21 @@ impl Node {
             Self::FlipFlop(FlipFlop { key, .. }) | Self::Conjunct(Conjunct { key, .. }) => {
                 key.clone()
             }
-            Self::Sink(Sink { key }) => key.clone(),
+        }
+    }
+    fn reset_levels(&mut self) {
+        match self {
+            Node::Button | Node::Broadcaster => (),
+            Node::FlipFlop(f) => f.reset_levels(),
+            Node::Conjunct(c) => c.reset_levels(),
         }
     }
 
-    fn generate_output_state(&mut self, input_signal: Signal) -> Option<State> {
+    fn generate_output_state(&mut self, input_signal: &Signal) -> Option<State> {
         match self {
             Self::Button | Self::Broadcaster => Some(State::Low),
-            Self::FlipFlop(f) => f.process(input_signal),
-            Self::Conjunct(c) => c.process(input_signal),
-            Self::Sink(_) => None,
+            Self::FlipFlop(f) => f.process(&input_signal),
+            Self::Conjunct(c) => c.process(&input_signal),
         }
     }
 }
@@ -189,13 +199,9 @@ impl From<&str> for Node {
                 ..Default::default()
             })
         } else {
-            Self::Sink(Sink { key })
+            panic!("AAAA Don't try to add output or rx here");
         }
     }
-}
-#[derive(Default, Clone, Debug, PartialEq, Eq)]
-struct Sink {
-    key: String,
 }
 
 #[derive(Default, Clone, Debug, PartialEq, Eq)]
@@ -205,7 +211,7 @@ struct FlipFlop {
 }
 
 impl FlipFlop {
-    fn process(&mut self, input_signal: Signal) -> Option<State> {
+    fn process(&mut self, input_signal: &Signal) -> Option<State> {
         if input_signal.level == State::Low {
             self.state.toggle();
             Some(self.state)
@@ -213,49 +219,52 @@ impl FlipFlop {
             None
         }
     }
+    fn reset_levels(&mut self) {
+        self.state = State::Low;
+    }
 }
 
-#[derive(Default, Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 struct Conjunct {
     key: String,
-    first_input: State,
-    second_input: State,
-    first_from: Option<String>,
-    second_from: Option<String>,
+    inputs: Vec<State>,
+    froms: Vec<String>,
+}
+
+impl Default for Conjunct {
+    fn default() -> Self {
+        Self {
+            key: String::default(),
+            inputs: vec![],
+            froms: vec![],
+        }
+    }
 }
 
 impl Conjunct {
-    fn process(&mut self, input_signal: Signal) -> Option<State> {
-        if let Some(ref first_from) = self.first_from {
-            if input_signal.from == *first_from {
-                self.first_input = input_signal.level;
-            }
+    fn process(&mut self, input_signal: &Signal) -> Option<State> {
+        if let Some(index) = self.froms.iter().position(|f| *f == input_signal.from) {
+            self.inputs[index] = input_signal.level;
         } else {
-            self.first_input = input_signal.level;
-            self.first_from = Some(input_signal.from.clone());
+            self.froms.push(input_signal.from.clone());
+            self.inputs.push(input_signal.level)
         }
 
-        if let Some(ref second_from) = self.second_from {
-            if input_signal.from == *second_from {
-                self.second_input = input_signal.level;
-            }
-        } else {
-            self.second_input = input_signal.level;
-        }
-
-        self.calc_and()
-    }
-
-    fn calc_and(&self) -> Option<State> {
-        if self.first_input == State::High && self.second_input == State::High {
+        let result = if self.inputs.iter().all(|input| *input == State::High) {
             Some(State::Low)
         } else {
             Some(State::High)
-        }
+        };
+
+        return result;
+    }
+
+    fn reset_levels(&mut self) {
+        self.inputs.iter_mut().for_each(|input| *input = State::Low);
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 struct Signal {
     level: State,
     to: String,
@@ -269,4 +278,78 @@ fn sample1() {
 #[test]
 fn sample2() {
     assert_eq!(run("sample_input2.txt").unwrap(), 11687500);
+}
+
+#[test]
+fn conjunction_behaviour_inverter() {
+    let mut conj = Conjunct::default();
+    let input_signal = Signal {
+        level: State::Low,
+        ..Default::default()
+    };
+    assert_eq!(conj.process(&input_signal), Some(State::High));
+    assert_eq!(conj.process(&input_signal), Some(State::High));
+    let input_signal = Signal {
+        level: State::High,
+        ..Default::default()
+    };
+    assert_eq!(conj.process(&input_signal), Some(State::Low));
+    assert_eq!(conj.process(&input_signal), Some(State::Low));
+}
+
+#[test]
+fn conjunction_behaviour_and() {
+    let mut conj = Conjunct::default();
+    let mut input_signal1 = Signal {
+        from: "A".to_owned(),
+        level: State::Low,
+        ..Default::default()
+    };
+    let mut input_signal2 = Signal {
+        from: "B".to_owned(),
+        level: State::Low,
+        ..Default::default()
+    };
+
+    assert_eq!(conj.process(&input_signal1), Some(State::High));
+    assert_eq!(conj.process(&input_signal2), Some(State::High));
+    input_signal1.level = State::High;
+    assert_eq!(conj.process(&input_signal1), Some(State::High));
+    assert_eq!(conj.process(&input_signal2), Some(State::High));
+    input_signal2.level = State::High;
+    assert_eq!(conj.process(&input_signal1), Some(State::High));
+    assert_eq!(conj.process(&input_signal2), Some(State::Low));
+    input_signal2.level = State::Low;
+    assert_eq!(conj.process(&input_signal1), Some(State::Low));
+    assert_eq!(conj.process(&input_signal2), Some(State::High));
+    input_signal1.level = State::Low;
+    assert_eq!(conj.process(&input_signal1), Some(State::High));
+    assert_eq!(conj.process(&input_signal2), Some(State::High));
+}
+
+#[test]
+fn flipflop_behaviour() {
+    let mut ff = FlipFlop::default();
+    assert_eq!(ff.state, State::Low);
+    let input_signal = Signal {
+        level: State::Low,
+        ..Default::default()
+    };
+    ff.process(&input_signal);
+    assert_eq!(ff.state, State::High);
+    ff.process(&input_signal);
+    assert_eq!(ff.state, State::Low);
+    let input_signal = Signal {
+        level: State::High,
+        ..Default::default()
+    };
+    ff.process(&input_signal);
+    assert_eq!(ff.state, State::Low);
+    ff.process(&input_signal);
+    assert_eq!(ff.state, State::Low);
+}
+
+#[test]
+fn with_input() {
+    assert_eq!(run("input.txt").unwrap(), 834323022)
 }
