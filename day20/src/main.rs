@@ -33,7 +33,7 @@ fn run(filename: &str) -> Result<usize> {
 }
 
 fn press_button(
-    lookup: &mut HashMap<String, Rc<RefCell<Node>>>,
+    lookup: &mut HashMap<String, WrappedNode>,
     graph: &Graph,
     high_signals: &mut usize,
     low_signals: &mut usize,
@@ -80,7 +80,7 @@ fn press_button(
 
 fn build_graph_and_lookup(
     filename: &str,
-) -> Result<(Graph, HashMap<String, Rc<RefCell<Node>>>), anyhow::Error> {
+) -> Result<(Graph, HashMap<String, WrappedNode>), anyhow::Error> {
     let file = File::open(filename).with_context(|| "Unable to open file {filename}")?;
     let reader = BufReader::new(file);
     let mut graph = Graph::new();
@@ -101,14 +101,11 @@ fn build_graph_and_lookup(
         for adj in adj_list.iter() {
             if let Some(target_node) = node_lookup.get_mut(adj) {
                 let target_node = &mut *target_node.borrow_mut();
-                match target_node {
-                    &mut Node::Conjunct(ref mut c) => {
-                        let source_name = &*source_node.borrow().get_name();
-                        c.froms.push(source_name.to_owned());
-                        c.inputs.push(State::Low);
-                    }
-                    _ => (),
-                };
+                if let &mut Node::Conjunct(ref mut c) = target_node {
+                    let source_name = &*source_node.borrow().get_name();
+                    c.froms.push(source_name.to_owned());
+                    c.inputs.push(State::Low);
+                }
             }
         }
     }
@@ -132,9 +129,11 @@ impl State {
     }
 }
 
+type WrappedNode = Rc<RefCell<Node>>;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Graph {
-    nodes: Vec<Rc<RefCell<Node>>>,
+    nodes: Vec<WrappedNode>,
     adj_lists: Vec<Vec<String>>,
 }
 
@@ -176,8 +175,8 @@ impl Node {
     fn generate_output_state(&mut self, input_signal: &Signal) -> Option<State> {
         match self {
             Self::Button | Self::Broadcaster => Some(State::Low),
-            Self::FlipFlop(f) => f.process(&input_signal),
-            Self::Conjunct(c) => c.process(&input_signal),
+            Self::FlipFlop(f) => f.process(input_signal),
+            Self::Conjunct(c) => c.process(input_signal),
         }
     }
 }
@@ -185,15 +184,15 @@ impl Node {
 impl From<&str> for Node {
     fn from(s: &str) -> Self {
         let split: Vec<&str> = s.split("->").collect();
-        let key = split[0].to_owned().replace('%', "").replace('&', "");
+        let key = split[0].to_owned().replace(['%', '&'], "");
         if split[0] == "broadcaster" {
             Self::Broadcaster
-        } else if s.starts_with("%") {
+        } else if s.starts_with('%') {
             Self::FlipFlop(FlipFlop {
                 key,
                 ..Default::default()
             })
-        } else if s.starts_with("&") {
+        } else if s.starts_with('&') {
             Self::Conjunct(Conjunct {
                 key,
                 ..Default::default()
@@ -224,21 +223,11 @@ impl FlipFlop {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
 struct Conjunct {
     key: String,
     inputs: Vec<State>,
     froms: Vec<String>,
-}
-
-impl Default for Conjunct {
-    fn default() -> Self {
-        Self {
-            key: String::default(),
-            inputs: vec![],
-            froms: vec![],
-        }
-    }
 }
 
 impl Conjunct {
@@ -250,13 +239,11 @@ impl Conjunct {
             self.inputs.push(input_signal.level)
         }
 
-        let result = if self.inputs.iter().all(|input| *input == State::High) {
+        if self.inputs.iter().all(|input| *input == State::High) {
             Some(State::Low)
         } else {
             Some(State::High)
-        };
-
-        return result;
+        }
     }
 
     fn reset_levels(&mut self) {
