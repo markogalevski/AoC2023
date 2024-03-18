@@ -15,20 +15,15 @@ fn main() -> Result<()> {
 }
 
 fn run(filename: &str) -> Result<usize> {
-    let (mut graph, mut lookup) = build_graph_and_lookup(filename)?;
+    let (graph, mut lookup) = build_graph_and_lookup(filename)?;
     let mut high_signals: usize = 0;
     let mut low_signals: usize = 0;
 
-    graph
-        .nodes
-        .iter_mut()
-        .for_each(|node| node.borrow_mut().reset_levels());
     for _ in 1..=1000 {
         press_button(&mut lookup, &graph, &mut high_signals, &mut low_signals);
     }
     println!("High: {high_signals}");
     println!("Low: {low_signals}");
-
     Ok(high_signals * low_signals)
 }
 
@@ -164,13 +159,6 @@ impl Node {
             }
         }
     }
-    fn reset_levels(&mut self) {
-        match self {
-            Node::Button | Node::Broadcaster => (),
-            Node::FlipFlop(f) => f.reset_levels(),
-            Node::Conjunct(c) => c.reset_levels(),
-        }
-    }
 
     fn generate_output_state(&mut self, input_signal: &Signal) -> Option<State> {
         match self {
@@ -218,9 +206,6 @@ impl FlipFlop {
             None
         }
     }
-    fn reset_levels(&mut self) {
-        self.state = State::Low;
-    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
@@ -244,10 +229,6 @@ impl Conjunct {
         } else {
             Some(State::High)
         }
-    }
-
-    fn reset_levels(&mut self) {
-        self.inputs.iter_mut().for_each(|input| *input = State::Low);
     }
 }
 
