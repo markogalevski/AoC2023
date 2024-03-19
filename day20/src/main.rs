@@ -1,7 +1,5 @@
 use std::collections::VecDeque;
-use std::rc::Rc;
 use std::{
-    cell::RefCell,
     collections::HashMap,
     convert::From,
     fs::File,
@@ -15,28 +13,21 @@ fn main() -> Result<()> {
 }
 
 fn run(filename: &str) -> Result<usize> {
-    let (graph, mut lookup) = build_graph_and_lookup(filename)?;
-    /*
-        Find object feeding rx.
-        Find its inputs.
-        press the button until all of the inputs have received high at least once.
-        registetr  that button press at that time.
-    */
-    let rx_feeder = lookup.get("rs").unwrap();
-    let rx_feeder = &rx_feeder.borrow().clone();
+    let (mut graph, mut lookup) = build_graph_and_lookup(filename)?;
+    let rx_feeder = &graph.nodes[*lookup.get("rs").unwrap_or(&0)];
     let mut feeder_sources: HashMap<String, bool> = if let Node::Conjunct(c) = rx_feeder {
         c.froms.iter().map(|f| (f.clone(), false)).collect()
     } else {
-        panic!("WHAT");
+        HashMap::new()
     };
 
     let mut high_signals: usize = 0;
     let mut low_signals: usize = 0;
     let mut rx_product: usize = 1;
-    for i in 1..=10000 {
+    for i in 1..=1000 {
         press_button(
             &mut lookup,
-            &graph,
+            &mut graph,
             &mut high_signals,
             &mut low_signals,
             &mut feeder_sources,
@@ -59,8 +50,8 @@ fn run(filename: &str) -> Result<usize> {
 }
 
 fn press_button(
-    lookup: &mut HashMap<String, WrappedNode>,
-    graph: &Graph,
+    lookup: &mut HashMap<String, usize>,
+    graph: &mut Graph,
     high_signals: &mut usize,
     low_signals: &mut usize,
     feeder_sources: &mut HashMap<String, bool>,
@@ -77,33 +68,27 @@ fn press_button(
         if signal.to == "rx" || signal.to == "output" {
             continue;
         }
-        let recipient = lookup.get(&signal.to).unwrap();
-        if let Some(idx) = graph
-            .nodes
-            .iter()
-            .position(|n| *n.borrow() == *recipient.as_ref().borrow())
-        {
-            let adj_list = &graph.adj_lists[idx];
-            let from = signal.to.clone();
-            if let Some(new_level) = recipient.borrow_mut().generate_output_state(&signal) {
-                for adj in adj_list {
-                    if feeder_keys.contains(&from) && new_level == State::High {
-                        feeder_sources.insert(from.clone(), true);
-                    }
-                    if new_level == State::High {
-                        *high_signals += 1;
-                    } else {
-                        *low_signals += 1;
-                    }
-
-                    let new_signal = Signal {
-                        from: from.clone(),
-                        level: new_level,
-                        to: adj.clone(),
-                    };
-
-                    signal_queue.push_back(new_signal);
+        let idx = lookup.get(&signal.to).unwrap();
+        let adj_list = &graph.adj_lists[*idx];
+        let from = signal.to.clone();
+        if let Some(new_level) = graph.nodes[*idx].generate_output_state(&signal) {
+            for adj in adj_list {
+                if feeder_keys.contains(&from) && new_level == State::High {
+                    feeder_sources.insert(from.clone(), true);
                 }
+                if new_level == State::High {
+                    *high_signals += 1;
+                } else {
+                    *low_signals += 1;
+                }
+
+                let new_signal = Signal {
+                    from: from.clone(),
+                    level: new_level,
+                    to: adj.clone(),
+                };
+
+                signal_queue.push_back(new_signal);
             }
         }
     }
@@ -111,29 +96,30 @@ fn press_button(
 
 fn build_graph_and_lookup(
     filename: &str,
-) -> Result<(Graph, HashMap<String, WrappedNode>), anyhow::Error> {
+) -> Result<(Graph, HashMap<String, usize>), anyhow::Error> {
     let file = File::open(filename).with_context(|| "Unable to open file {filename}")?;
     let reader = BufReader::new(file);
     let mut graph = Graph::new();
-    let mut node_lookup: HashMap<String, Rc<RefCell<Node>>> = HashMap::new();
-    graph.nodes.push(Rc::new(RefCell::new(Node::Button)));
+    let mut node_lookup: HashMap<String, usize> = HashMap::new();
+    graph.nodes.push(Node::Button);
     graph.adj_lists.push(vec!["broadcaster".to_owned()]);
     for line in reader.lines() {
         let line = line.unwrap();
         let split: Vec<&str> = line.split("->").collect();
-        let node = Rc::new(RefCell::new(Node::from(split[0].trim())));
-        node_lookup.insert(node.borrow().get_name(), node.clone());
+        let node = Node::from(split[0].trim());
+        let node_name = node.get_name();
         graph.nodes.push(node);
+        node_lookup.insert(node_name, graph.nodes.len() - 1);
         graph
             .adj_lists
             .push(split[1].split(',').map(|s| s.trim().to_owned()).collect());
     }
-    for (adj_list, source_node) in graph.adj_lists.iter().zip(graph.nodes.iter()) {
+    for (adj_list, source_node) in graph.adj_lists.iter().zip(graph.nodes.clone().iter()) {
         for adj in adj_list.iter() {
-            if let Some(target_node) = node_lookup.get_mut(adj) {
-                let target_node = &mut *target_node.borrow_mut();
+            if let Some(target_node_index) = node_lookup.get(adj) {
+                let target_node = &mut graph.nodes[*target_node_index];
                 if let &mut Node::Conjunct(ref mut c) = target_node {
-                    let source_name = &*source_node.borrow().get_name();
+                    let source_name = source_node.get_name();
                     c.froms.push(source_name.to_owned());
                     c.inputs.push(State::Low);
                 }
@@ -160,11 +146,9 @@ impl State {
     }
 }
 
-type WrappedNode = Rc<RefCell<Node>>;
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Graph {
-    nodes: Vec<WrappedNode>,
+    nodes: Vec<Node>,
     adj_lists: Vec<Vec<String>>,
 }
 
